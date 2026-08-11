@@ -1,10 +1,13 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import createAxiosInstance from '../services/api'
 import * as authApi from '../services/auth'
+import { getCurrentUser } from '../services/users'
+import type { User } from '../types/user'
 
 type AuthContextType = {
   accessToken?: string | null
   refreshToken?: string | null
+  user?: User | null
   login: (username: string, password: string) => Promise<void>
   register: (fullName: string, email: string, mobile: string | undefined, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -16,6 +19,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [accessToken, setAccessToken] = useState<string | null>(() => localStorage.getItem('accessToken'))
   const [refreshToken, setRefreshToken] = useState<string | null>(() => localStorage.getItem('refreshToken'))
+  const [user, setUser] = useState<User | null>(() => {
+    const raw = localStorage.getItem('user')
+    return raw ? JSON.parse(raw) : null
+  })
 
   // create axios instance bound to current access token
   const axiosInstance = useMemo(() => {
@@ -36,13 +43,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('refreshToken', data.refreshToken)
             inst.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`
             originalRequest.headers['Authorization'] = `Bearer ${data.accessToken}`
+            // refresh local user as well
+            try {
+              const u = await getCurrentUser(data.accessToken)
+              setUser(u)
+              localStorage.setItem('user', JSON.stringify(u))
+            } catch (e) { /* ignore */ }
             return inst(originalRequest)
           } catch (e) {
             // refresh failed; proceed to logout
             setAccessToken(null)
             setRefreshToken(null)
+            setUser(null)
             localStorage.removeItem('accessToken')
             localStorage.removeItem('refreshToken')
+            localStorage.removeItem('user')
             return Promise.reject(e)
           }
         }
@@ -54,11 +69,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [accessToken, refreshToken])
 
   useEffect(() => {
-    // ensure axios default auth header updated
-    if (accessToken) {
-      // no-op, axiosInstance created with header
+    // on initial load, if we have access token but no user, try to fetch
+    const init = async () => {
+      if (accessToken && !user) {
+        try {
+          const u = await getCurrentUser(accessToken)
+          setUser(u)
+          localStorage.setItem('user', JSON.stringify(u))
+        } catch (e) {
+          // ignore - tokens might be invalid
+        }
+      }
     }
-  }, [accessToken])
+    init()
+  }, [])
 
   async function login(username: string, password: string) {
     const data = await authApi.login(username, password)
@@ -66,6 +90,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRefreshToken(data.refreshToken)
     localStorage.setItem('accessToken', data.accessToken)
     localStorage.setItem('refreshToken', data.refreshToken)
+    // fetch user
+    try {
+      const u = await getCurrentUser(data.accessToken)
+      setUser(u)
+      localStorage.setItem('user', JSON.stringify(u))
+    } catch (e) { /* ignore */ }
   }
 
   async function register(fullName: string, email: string, mobile: string | undefined, password: string) {
@@ -80,12 +110,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setAccessToken(null)
     setRefreshToken(null)
+    setUser(null)
     localStorage.removeItem('accessToken')
     localStorage.removeItem('refreshToken')
+    localStorage.removeItem('user')
   }
 
   return (
-    <AuthContext.Provider value={{ accessToken, refreshToken, login, register, logout, axiosInstance: createAxiosInstance }}>
+    <AuthContext.Provider value={{ accessToken, refreshToken, user, login, register, logout, axiosInstance: createAxiosInstance }}>
       {children}
     </AuthContext.Provider>
   )

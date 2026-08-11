@@ -21,13 +21,17 @@ export default function NavBar() {
         <Typography variant="h6" component={RouterLink} to="/" sx={{ color: 'inherit', textDecoration: 'none', flexGrow: 1 }}>
           BusGo
         </Typography>
-        {!auth.accessToken ? (
+        {auth.user ? (
+          <>
+            <Typography sx={{ mr: 2 }}>{auth.user.fullName || auth.user.email}</Typography>
+            {auth.user.roles?.includes('ADMIN') && <Button color="inherit" component={RouterLink} to="/admin">Admin</Button>}
+            <Button color="inherit" onClick={handleLogout}>Logout</Button>
+          </>
+        ) : (
           <>
             <Button color="inherit" component={RouterLink} to="/login">Login</Button>
             <Button color="inherit" component={RouterLink} to="/register">Register</Button>
           </>
-        ) : (
-          <Button color="inherit" onClick={handleLogout}>Logout</Button>
         )}
       </Toolbar>
     </AppBar>
