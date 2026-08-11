@@ -8,6 +8,7 @@ import NavBar from './components/NavBar'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminDashboard from './pages/AdminDashboard'
 import OperatorDashboard from './pages/OperatorDashboard'
+import AdminUsers from './pages/AdminUsers'
 
 export default function App() {
   return (
@@ -22,6 +23,12 @@ export default function App() {
           <Route path="/admin" element={
             <ProtectedRoute requiredRoles={["ADMIN"]}>
               <AdminDashboard />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/admin/users" element={
+            <ProtectedRoute requiredRoles={["ADMIN"]}>
+              <AdminUsers />
             </ProtectedRoute>
           } />
 
