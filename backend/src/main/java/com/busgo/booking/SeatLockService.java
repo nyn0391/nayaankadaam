@@ -29,10 +29,10 @@ public class SeatLockService {
         return "seatlock:" + tripId + ":" + seatCode;
     }
 
-    public record HoldResult(String holdToken, List<String> conflicts) {}
+    public record HoldResult(String holdToken, List<String> conflicts, long expiresInSeconds) {}
 
     public HoldResult holdSeats(String tripId, List<String> seatCodes, String userId) {
-        if (seatCodes == null || seatCodes.isEmpty()) return new HoldResult(null, List.of());
+        if (seatCodes == null || seatCodes.isEmpty()) return new HoldResult(null, List.of(), 0);
         List<String> keys = new ArrayList<>();
         for (String s : seatCodes) keys.add(seatKey(tripId, s));
         String holdToken = UUID.randomUUID().toString();
@@ -43,17 +43,17 @@ public class SeatLockService {
             if (res != null && res instanceof String) {
                 String r = (String) res;
                 if (r.equals("OK")) {
-                    return new HoldResult(holdToken, List.of());
+                    return new HoldResult(holdToken, List.of(), ttlSeconds);
                 }
                 if (r.startsWith("CONFLICT:")) {
                     String conflictKey = r.substring("CONFLICT:".length());
-                    return new HoldResult(null, List.of(conflictKey));
+                    return new HoldResult(null, List.of(conflictKey), 0);
                 }
             }
         } catch (Exception ex) {
-            return new HoldResult(null, List.of("error"));
+            return new HoldResult(null, List.of("error"), 0);
         }
-        return new HoldResult(null, List.of("unknown"));
+        return new HoldResult(null, List.of("unknown"), 0);
     }
 
     public List<String> getSeatsForHold(String holdToken) {
@@ -83,5 +83,9 @@ public class SeatLockService {
             for (String k : seats) redis.delete(k);
         }
         redis.delete(mapKey);
+    }
+
+    public long getLockTtlSeconds() {
+        return lockTtl.getSeconds();
     }
 }
