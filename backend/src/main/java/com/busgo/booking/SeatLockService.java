@@ -1,70 +1,86 @@
 package com.busgo.booking;
 
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 public class SeatLockService {
 
-    private final RedisTemplate<String, String> redis;
+    private final StringRedisTemplate redis;
+    private final DefaultRedisScript<String> lockSeatsScript;
+    private final DefaultRedisScript<String> confirmHoldScript;
     private final Duration lockTtl = Duration.ofMinutes(5);
 
-    public SeatLockService(RedisTemplate<String, String> redis) {
+    public SeatLockService(StringRedisTemplate redis,
+                           DefaultRedisScript<String> lockSeatsScript,
+                           DefaultRedisScript<String> confirmHoldScript) {
         this.redis = redis;
+        this.lockSeatsScript = lockSeatsScript;
+        this.confirmHoldScript = confirmHoldScript;
     }
 
-    private String key(String tripId, String seatCode) {
+    private String seatKey(String tripId, String seatCode) {
         return "seatlock:" + tripId + ":" + seatCode;
     }
 
+    public record HoldResult(String holdToken, List<String> conflicts) {}
+
     /**
-     * Attempt to lock seats for a given trip. Returns a hold token if successful (random UUID).
-     * If any seat is already locked, returns null.
+     * Attempt to lock seats atomically using Lua script. Returns HoldResult with a holdToken when successful.
+     * If conflicts exist, holdToken will be null and conflicts contain the conflicting seat keys.
      */
-    public String holdSeats(String tripId, List<String> seatCodes, String userId) {
-        // simple optimistic approach: check and set
-        List<String> keys = seatCodes.stream().map(s -> key(tripId, s)).collect(Collectors.toList());
-        // check
-        for (String k : keys) {
-            Boolean exists = redis.hasKey(k);
-            if (Boolean.TRUE.equals(exists)) return null;
-        }
+    public HoldResult holdSeats(String tripId, List<String> seatCodes, String userId) {
+        if (seatCodes == null || seatCodes.isEmpty()) return new HoldResult(null, List.of());
+        List<String> keys = new ArrayList<>();
+        for (String s : seatCodes) keys.add(seatKey(tripId, s));
         String holdToken = UUID.randomUUID().toString();
-        for (String s : seatCodes) {
-            String k = key(tripId, s);
-            redis.opsForValue().set(k, holdToken + ":" + userId, lockTtl);
-        }
-        // store a mapping from holdToken to seats for easy confirmation later
         String mapKey = "hold:" + holdToken;
-        redis.opsForList().rightPushAll(mapKey, keys.toArray(new String[0]));
-        redis.expire(mapKey, lockTtl);
-        return holdToken;
+        // args: holdToken, userId, ttlSeconds, mapKey
+        Long ttlSeconds = lockTtl.getSeconds();
+        try {
+            Object res = redis.execute(lockSeatsScript, keys, holdToken, userId, ttlSeconds.toString(), mapKey);
+            if (res != null && res instanceof String) {
+                String r = (String) res;
+                if (r.equals("OK")) {
+                    return new HoldResult(holdToken, List.of());
+                }
+                if (r.startsWith("CONFLICT:")) {
+                    String conflictKey = r.substring("CONFLICT:".length());
+                    return new HoldResult(null, List.of(conflictKey));
+                }
+            }
+        } catch (Exception ex) {
+            // fallback: indicate conflict
+            return new HoldResult(null, List.of("error"));
+        }
+        return new HoldResult(null, List.of("unknown"));
     }
 
     public boolean confirmHold(String holdToken) {
         String mapKey = "hold:" + holdToken;
-        Long size = redis.opsForList().size(mapKey);
-        if (size == null || size == 0) return false;
-        // free keys and keep as booked marker; in a real system we'd mark DB booked and remove locks
-        List<String> keys = redis.opsForList().range(mapKey, 0, -1);
-        if (keys == null) return false;
-        for (String k : keys) {
-            redis.delete(k);
+        try {
+            Object res = redis.execute(confirmHoldScript, List.of(mapKey), holdToken);
+            if (res != null && res instanceof String) {
+                String r = (String) res;
+                return r.equals("OK");
+            }
+        } catch (Exception ex) {
+            return false;
         }
-        redis.delete(mapKey);
-        return true;
+        return false;
     }
 
     public void releaseHold(String holdToken) {
         String mapKey = "hold:" + holdToken;
-        List<String> keys = redis.opsForList().range(mapKey, 0, -1);
-        if (keys != null) {
-            for (String k : keys) redis.delete(k);
+        List<String> seats = redis.opsForList().range(mapKey, 0, -1);
+        if (seats != null) {
+            for (String k : seats) redis.delete(k);
         }
         redis.delete(mapKey);
     }
