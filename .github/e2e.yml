@@ -1,0 +1,55 @@
+name: E2E
+on:
+  pull_request:
+  push:
+    branches: [ bootstrap ]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build backend
+        working-directory: backend
+        run: mvn -DskipTests package -DskipITs
+
+      - name: Start backend
+        working-directory: backend
+        run: |
+          mvn -DskipTests spring-boot:run &
+          echo "Waiting for backend to start..."
+          npx wait-on http://localhost:8080 || (sleep 2; npx wait-on http://localhost:8080)
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: |
+          npm ci
+
+      - name: Start frontend dev server
+        working-directory: frontend
+        run: |
+          npm run dev &
+          npx wait-on http://localhost:3000 || (sleep 2; npx wait-on http://localhost:3000)
+
+      - name: Run Cypress E2E
+        working-directory: frontend/e2e
+        run: |
+          npm ci
+          npx cypress run --config baseUrl=http://localhost:3000

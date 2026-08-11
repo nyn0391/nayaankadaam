@@ -1,0 +1,13 @@
+# Dockerfile for backend
+
+FROM eclipse-temurin:21-jdk-alpine as build
+WORKDIR /workspace
+COPY backend /workspace
+RUN ./mvnw -v || true
+RUN mvn -f /workspace/pom.xml -DskipTests package -Pprod
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=build /workspace/target/*.jar /app/app.jar
+EXPOSE 8080
+ENTRYPOINT ["java","-jar","/app/app.jar"]

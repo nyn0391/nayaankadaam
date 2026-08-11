@@ -1,0 +1,58 @@
+package com.busgo.route;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.prepost.PreAuthorize;
+
+import com.busgo.security.SecurityUtils;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/routes")
+public class RouteController {
+
+    private final RouteRepository repo;
+    private final SecurityUtils securityUtils;
+
+    public RouteController(RouteRepository repo, SecurityUtils securityUtils) { this.repo = repo; this.securityUtils = securityUtils; }
+
+    @GetMapping
+    public List<Route> list() { return repo.findAll(); }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> get(@PathVariable UUID id) { return repo.findById(id).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build()); }
+
+    @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> create(@RequestBody Route route) {
+        if (route.getId() == null) route.setId(UUID.randomUUID());
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        var uid = securityUtils.getUserId(auth);
+        if (uid != null) route.setCreatedBy(uid);
+        return ResponseEntity.ok(repo.save(route));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody Route in) {
+        return repo.findById(id).map(existing -> {
+            existing.setCode(in.getCode());
+            existing.setOrigin(in.getOrigin());
+            existing.setDestination(in.getDestination());
+            existing.setStops(in.getStops());
+            existing.setDistanceKm(in.getDistanceKm());
+            existing.setDurationMinutes(in.getDurationMinutes());
+            repo.save(existing);
+            return ResponseEntity.ok(existing);
+        }).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> delete(@PathVariable UUID id) { repo.deleteById(id); return ResponseEntity.ok().build(); }
+}
