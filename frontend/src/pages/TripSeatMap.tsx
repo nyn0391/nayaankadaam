@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Box, Button, Grid, Paper, Typography, CircularProgress } from '@mui/material'
+import { Box, Button, Grid, Paper, Typography, CircularProgress, Chip } from '@mui/material'
 import * as holdsApi from '../services/holds'
 import useSeatSocket from '../hooks/useSeatSocket'
 
@@ -15,6 +15,7 @@ export default function TripSeatMap() {
   const [countdown, setCountdown] = useState<number | null>(null)
   const [selectedSeats, setSelectedSeats] = useState<string[]>([])
   const timerRef = useRef<any>(null)
+  const lastSelectedRef = useRef<string | null>(null)
 
   useEffect(() => { loadSeats(); return cleanupTimer }, [instanceId])
 
@@ -95,21 +96,47 @@ export default function TripSeatMap() {
     return !s.isBooked && !(s.held && !s.heldByMe)
   }
 
-  function toggleSelect(seatCode: string) {
+  function toggleSelect(seatCode: string, additive = false) {
     setSelectedSeats(prev => {
       if (prev.includes(seatCode)) return prev.filter(x => x !== seatCode)
-      return [...prev, seatCode]
+      if (additive) return [...prev, seatCode]
+      return [seatCode]
     })
   }
 
-  async function handleSeatClick(seatCode: string) {
+  // handle click with support for Shift range and Ctrl/Cmd additive selection
+  async function handleSeatClick(seatCode: string, e?: React.MouseEvent) {
     if (!instanceId) return
     setError('')
     const seat = seats.find(s => s.seatCode === seatCode)
     if (!seat) return
     if (!isSelectable(seat)) return setError('Seat not selectable')
-    // toggle selection locally
-    toggleSelect(seatCode)
+
+    const isShift = e?.shiftKey
+    const isCtrl = e?.ctrlKey || e?.metaKey
+
+    if (isShift && lastSelectedRef.current) {
+      // select range between lastSelected and this in the seats array order
+      const codes = seats.map(s => s.seatCode)
+      const a = codes.indexOf(lastSelectedRef.current)
+      const b = codes.indexOf(seatCode)
+      if (a >= 0 && b >= 0) {
+        const [start, end] = a < b ? [a, b] : [b, a]
+        const range = codes.slice(start, end + 1)
+        // filter out non-selectable
+        const selectableRange = range.filter(code => {
+          const s = seats.find(x => x.seatCode === code)
+          return s && isSelectable(s)
+        })
+        setSelectedSeats(selectableRange)
+      } else {
+        toggleSelect(seatCode, isCtrl)
+      }
+    } else {
+      toggleSelect(seatCode, isCtrl)
+    }
+
+    lastSelectedRef.current = seatCode
   }
 
   async function handleCreateHold() {
@@ -126,6 +153,20 @@ export default function TripSeatMap() {
     } catch (e:any) {
       setError(e?.response?.data?.error || 'Failed to create hold')
       await loadSeats()
+    } finally { setLoading(false) }
+  }
+
+  async function handleExtendHold() {
+    if (!myHold || !instanceId) return
+    setLoading(true)
+    setError('')
+    try {
+      // extend by 5 minutes (300 seconds)
+      const res = await holdsApi.extendHold(instanceId, myHold.holdToken, 300)
+      setMyHold({ holdToken: res.holdToken, expiresAt: res.expiresAt, seats: res.seats })
+      // seat events will update expiry for individual seats via socket as well
+    } catch (e:any) {
+      setError(e?.response?.data?.error || 'Failed to extend hold')
     } finally { setLoading(false) }
   }
 
@@ -199,7 +240,7 @@ export default function TripSeatMap() {
       <Button key={s.seatCode}
         variant={s.isBooked ? 'contained' : (selected ? 'outlined' : 'text')}
         color={s.isBooked ? 'error' : (selected ? 'primary' : 'inherit')}
-        onClick={() => handleSeatClick(s.seatCode)}
+        onClick={(e) => handleSeatClick(s.seatCode, e)}
         disabled={s.isBooked || (s.held && !s.heldByMe)}
         sx={{ minWidth: 72, minHeight: 48 }}
       >
@@ -218,6 +259,16 @@ export default function TripSeatMap() {
       {error && <Typography color="error">{error}</Typography>}
 
       <Paper sx={{ p: 2, mt: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
+          <Chip label="Available" color="default" />
+          <Chip label="Selected" color="primary" />
+          <Chip label="Held (you)" color="success" />
+          <Chip label="Held (other)" color="warning" />
+          <Chip label="Booked" color="error" />
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="body2">Tip: Shift+click to select a range, Ctrl/Cmd+click to add/remove</Typography>
+        </Box>
+
         {renderGrid()}
 
         <Box sx={{ mt: 2 }}>
@@ -227,7 +278,8 @@ export default function TripSeatMap() {
               <Typography>Seats: {myHold.seats.join(', ')}</Typography>
               <Typography>Expires in: {countdown !== null ? `${countdown}s` : '-'}</Typography>
               <Button variant="contained" onClick={handleConfirm} sx={{ mr: 2 }}>Confirm booking</Button>
-              <Button variant="outlined" onClick={handleRelease}>Release hold</Button>
+              <Button variant="outlined" onClick={handleRelease} sx={{ mr: 2 }}>Release hold</Button>
+              <Button variant="text" onClick={handleExtendHold}>Extend +5m</Button>
             </>
           ) : (
             <>
