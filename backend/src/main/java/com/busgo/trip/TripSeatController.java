@@ -8,6 +8,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,18 +32,29 @@ public class TripSeatController {
         this.userRepository = userRepository;
     }
 
+    private String resolveCurrentUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return null;
+        if (auth instanceof JwtAuthenticationToken) {
+            Jwt jwt = ((JwtAuthenticationToken) auth).getToken();
+            Object uid = jwt.getClaim("uid");
+            String uidStr = uid != null ? uid.toString() : jwt.getSubject();
+            return uidStr;
+        }
+        String principal = auth.getName();
+        if (principal != null) {
+            User user = userRepository.findByEmail(principal).orElseGet(() -> userRepository.findByMobile(principal).orElse(null));
+            if (user != null) return user.getId().toString();
+        }
+        return null;
+    }
+
     @GetMapping("/{tripId}/seats")
     public ResponseEntity<?> getSeats(@PathVariable String tripId) {
         UUID tid;
         try { tid = UUID.fromString(tripId); } catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("success", false, "message", "invalid tripId")); }
 
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        String principal = auth != null ? auth.getName() : null;
-        String currentUserId = null;
-        if (principal != null) {
-            User user = userRepository.findByEmail(principal).orElseGet(() -> userRepository.findByMobile(principal).orElse(null));
-            if (user != null) currentUserId = user.getId().toString();
-        }
+        String currentUserId = resolveCurrentUserId();
 
         List<TripSeat> tripSeats = tripSeatRepository.findByTripId(tid);
         List<Map<String, Object>> seats = tripSeats.stream().map(s -> {
@@ -71,3 +84,4 @@ public class TripSeatController {
         return ResponseEntity.ok(seats);
     }
 }
+EOF
