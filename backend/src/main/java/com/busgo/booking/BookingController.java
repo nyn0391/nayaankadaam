@@ -1,3 +1,4 @@
+
 package com.busgo.booking;
 
 import com.busgo.booking.dto.BookingResponse;
@@ -9,6 +10,8 @@ import com.busgo.user.UserRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -28,21 +31,32 @@ public class BookingController {
         this.userRepository = userRepository;
     }
 
+    private UUID resolveUserIdFromAuthentication(Authentication auth) {
+        if (auth == null) return null;
+        // Prefer JWT 'uid' claim or subject
+        if (auth instanceof JwtAuthenticationToken) {
+            Jwt jwt = ((JwtAuthenticationToken) auth).getToken();
+            Object uid = jwt.getClaim("uid");
+            String uidStr = uid != null ? uid.toString() : jwt.getSubject();
+            try { return uidStr != null ? UUID.fromString(uidStr) : null; } catch (Exception ignored) {}
+        }
+        // Fallback: treat auth.getName() as email or mobile and lookup user
+        String principal = auth.getName();
+        if (principal != null) {
+            User user = userRepository.findByEmail(principal).orElseGet(() -> userRepository.findByMobile(principal).orElse(null));
+            if (user != null) return user.getId();
+        }
+        return null;
+    }
+
     @PostMapping("/hold")
     public ResponseEntity<?> hold(@RequestBody HoldRequest req) {
         if (req.getTripId() == null || req.getSeatCodes() == null || req.getSeatCodes().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "tripId and seatCodes required"));
         }
-        // derive userId from authenticated principal
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        String principal = auth != null ? auth.getName() : null;
-        UUID userId = null;
-        if (principal != null) {
-            User user = userRepository.findByEmail(principal).orElseGet(() -> userRepository.findByMobile(principal).orElse(null));
-            if (user != null) userId = user.getId();
-        }
-
-        String userIdStr = userId != null ? userId.toString() : req.getUserId();
+        UUID userUuid = resolveUserIdFromAuthentication(auth);
+        String userIdStr = userUuid != null ? userUuid.toString() : req.getUserId();
 
         SeatLockService.HoldResult result = seatLockService.holdSeats(req.getTripId(), req.getSeatCodes(), userIdStr);
         if (result.holdToken() == null) {
@@ -59,13 +73,8 @@ public class BookingController {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "message", "paymentReference required"));
             }
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            String principal = auth != null ? auth.getName() : null;
-            UUID userUuid = null;
-            if (principal != null) {
-                User user = userRepository.findByEmail(principal).orElseGet(() -> userRepository.findByMobile(principal).orElse(null));
-                if (user != null) userUuid = user.getId();
-            }
-            if (userUuid == null) return ResponseEntity.status(401).body(Map.of("success", false, "message", "Unauthenticated"));
+            UUID userUuid = resolveUserIdFromAuthentication(auth);
+            if (userUuid == null) return ResponseEntity.status(401).body(Map.of("success", false, "message", "Unauthenticated or user id not present in token"));
 
             var booking = bookingService.confirmHoldAndCreateBooking(req.getHoldToken(), req.getPaymentReference(), userUuid);
             BookingResponse resp = new BookingResponse(booking.getId().toString(), booking.getStatus());
@@ -82,3 +91,4 @@ public class BookingController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 }
+EOF
