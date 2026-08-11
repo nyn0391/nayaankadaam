@@ -1,0 +1,4 @@
+CI trigger file
+
+This file was added to trigger GitHub Actions workflow on branch 'bootstrap'.
+Timestamp: 2026-08-11T12:30:00Z
