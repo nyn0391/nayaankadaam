@@ -90,19 +90,27 @@ public class AuthController {
     public ResponseEntity<?> refresh(@RequestBody RefreshRequest req) {
         String r = req.getRefreshToken();
         if (r == null) return ResponseEntity.badRequest().build();
-        Optional<RefreshToken> ot = refreshTokenService.findByToken(r);
-        if (ot.isEmpty()) return ResponseEntity.status(401).body(Map.of("success", false, "message", "Invalid refresh token"));
-        RefreshToken token = ot.get();
-        if (token.getExpiry().isBefore(OffsetDateTime.now())) {
-            return ResponseEntity.status(401).body(Map.of("success", false, "message", "Refresh token expired"));
-        }
 
-        Optional<User> ou = userRepo.findById(token.getUserId());
+        Optional<RefreshToken> rotated = refreshTokenService.rotateToken(r);
+        if (rotated.isEmpty()) {
+            return ResponseEntity.status(401).body(Map.of("success", false, "message", "Invalid or expired refresh token"));
+        }
+        RefreshToken newToken = rotated.get();
+
+        Optional<User> ou = userRepo.findById(newToken.getUserId());
         if (ou.isEmpty()) return ResponseEntity.status(401).body(Map.of("success", false, "message", "User not found"));
         User user = ou.get();
 
         String access = jwtUtil.generateToken(user.getUsername(), Map.of("uid", user.getId().toString()), accessTtlMs);
-        AuthResponse resp = new AuthResponse(access, token.getToken());
+        AuthResponse resp = new AuthResponse(access, newToken.getToken());
         return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestBody RefreshRequest req) {
+        String r = req.getRefreshToken();
+        if (r == null) return ResponseEntity.badRequest().build();
+        refreshTokenService.revokeByToken(r);
+        return ResponseEntity.ok(Map.of("success", true, "message", "Logged out"));
     }
 }
