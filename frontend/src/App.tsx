@@ -10,6 +10,10 @@ import AdminDashboard from './pages/AdminDashboard'
 import OperatorDashboard from './pages/OperatorDashboard'
 import AdminUsers from './pages/AdminUsers'
 import SeatMapPage from './pages/SeatMapPage'
+import SeatLayoutEditor from './pages/admin/SeatLayoutEditor'
+import BusesPage from './pages/admin/Buses'
+import RoutesPage from './pages/admin/Routes'
+import CreateTripPage from './pages/admin/CreateTrip'
 
 export default function App() {
   return (
@@ -40,6 +44,12 @@ export default function App() {
           } />
 
           <Route path="/trips/:tripId/seats" element={<SeatMapPage />} />
+
+          {/* Admin pages */}
+          <Route path="/admin/seat-layouts" element={<SeatLayoutEditor />} />
+          <Route path="/admin/buses" element={<BusesPage />} />
+          <Route path="/admin/routes" element={<RoutesPage />} />
+          <Route path="/admin/trips/create" element={<CreateTripPage />} />
 
         </Routes>
       </Container>
