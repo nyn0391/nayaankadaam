@@ -5,6 +5,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -37,6 +38,21 @@ public class ScheduleAdminController {
             return ResponseEntity.ok(r);
         } catch (Exception ex) {
             return ResponseEntity.status(400).body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> listRules(@RequestParam(value = "templateId", required = false) UUID templateId) {
+        try {
+            if (templateId != null) {
+                List<ScheduleRule> r = scheduleRuleRepository.findByTemplateId(templateId);
+                return ResponseEntity.ok(r);
+            }
+            List<ScheduleRule> all = scheduleRuleRepository.findAll();
+            return ResponseEntity.ok(all);
+        } catch (Exception ex) {
+            return ResponseEntity.status(500).body(Map.of("error", ex.getMessage()));
         }
     }
 
