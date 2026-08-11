@@ -1,0 +1,3 @@
+# Redis config for Spring Boot (if using standalone Redis, not required when using docker-compose default)
+spring.redis.host=${REDIS_HOST:redis}
+spring.redis.port=${REDIS_PORT:6379}
