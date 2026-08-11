@@ -1,5 +1,6 @@
 package com.busgo;
 
+import com.busgo.user.Role;
 import com.busgo.user.RoleRepository;
 import com.busgo.user.User;
 import com.busgo.user.UserRepository;
@@ -9,6 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Configuration
@@ -27,8 +29,19 @@ public class StartupRunner {
                     admin.setFullName("Administrator");
                     admin.setEmail(adminEmail);
                     admin.setPasswordHash(passwordEncoder.encode(adminPassword));
+
+                    // assign ADMIN role if present
+                    Optional<Role> or = roleRepo.findByName("ADMIN");
+                    or.ifPresent(admin::addRole);
+
                     userRepo.save(admin);
                     System.out.println("Created default admin: " + adminEmail);
+                } else {
+                    // ensure existing admin has ADMIN role
+                    userRepo.findByEmail(adminEmail).ifPresent(user -> {
+                        Optional<Role> adminRole = roleRepo.findByName("ADMIN");
+                        adminRole.ifPresent(r -> { if (!user.getRoles().contains(r)) { user.addRole(r); userRepo.save(user); } });
+                    });
                 }
             }
         };
