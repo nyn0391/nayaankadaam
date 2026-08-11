@@ -25,6 +25,7 @@ export default function NavBar() {
           <>
             <Typography sx={{ mr: 2 }}>{auth.user.fullName || auth.user.email}</Typography>
             {auth.user.roles?.includes('ADMIN') && <Button color="inherit" component={RouterLink} to="/admin">Admin</Button>}
+            {auth.user.roles?.includes('BUS_OPERATOR') && <Button color="inherit" component={RouterLink} to="/operator">Operator</Button>}
             <Button color="inherit" onClick={handleLogout}>Logout</Button>
           </>
         ) : (

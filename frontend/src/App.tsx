@@ -1,11 +1,13 @@
 import React from 'react'
-import { Routes, Route, Link } from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
 import Container from '@mui/material/Container'
-import Typography from '@mui/material/Typography'
 import Home from './pages/Home'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import NavBar from './components/NavBar'
+import ProtectedRoute from './components/ProtectedRoute'
+import AdminDashboard from './pages/AdminDashboard'
+import OperatorDashboard from './pages/OperatorDashboard'
 
 export default function App() {
   return (
@@ -16,6 +18,19 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+
+          <Route path="/admin" element={
+            <ProtectedRoute requiredRoles={["ADMIN"]}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/operator" element={
+            <ProtectedRoute requiredRoles={["BUS_OPERATOR"]}>
+              <OperatorDashboard />
+            </ProtectedRoute>
+          } />
+
         </Routes>
       </Container>
     </>
