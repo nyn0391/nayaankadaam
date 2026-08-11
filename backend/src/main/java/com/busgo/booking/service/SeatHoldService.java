@@ -7,8 +7,10 @@ import com.busgo.booking.model.TripSeat;
 import com.busgo.booking.repo.BookingRepository;
 import com.busgo.booking.model.Booking;
 import com.busgo.security.SecurityUtils;
+import com.busgo.booking.api.SeatEvent;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +28,7 @@ public class SeatHoldService {
     private final TripSeatRepository tripSeatRepository;
     private final BookingRepository bookingRepository;
     private final SecurityUtils securityUtils;
+    private final SimpMessagingTemplate messagingTemplate;
 
     private final Duration defaultTtl;
     private final int maxSeatsPerHold;
@@ -35,6 +38,7 @@ public class SeatHoldService {
                            TripSeatRepository tripSeatRepository,
                            BookingRepository bookingRepository,
                            SecurityUtils securityUtils,
+                           SimpMessagingTemplate messagingTemplate,
                            @Value("${app.hold.ttl.seconds:600}") long holdTtlSeconds,
                            @Value("${app.hold.maxSeats:6}") int maxSeatsPerHold) {
         this.redis = redis;
@@ -42,6 +46,7 @@ public class SeatHoldService {
         this.tripSeatRepository = tripSeatRepository;
         this.bookingRepository = bookingRepository;
         this.securityUtils = securityUtils;
+        this.messagingTemplate = messagingTemplate;
         this.defaultTtl = Duration.ofSeconds(holdTtlSeconds);
         this.maxSeatsPerHold = maxSeatsPerHold;
     }
@@ -104,6 +109,16 @@ public class SeatHoldService {
                 sh.setCreatedAt(OffsetDateTime.now());
                 sh.setExpiresAt(expiresAt);
                 seatHoldRepository.save(sh);
+
+                // publish HELD event
+                SeatEvent ev = new SeatEvent();
+                ev.setInstanceId(instanceId);
+                ev.setSeatCode(seat);
+                ev.setEventType(SeatEvent.Type.HELD);
+                ev.setHoldToken(holdToken);
+                ev.setExpiresAt(expiresAt);
+                ev.setUserId(userId);
+                messagingTemplate.convertAndSend(String.format("/topic/trips/%s/seats", instanceId.toString()), ev);
             }
 
             HoldResult r = new HoldResult();
@@ -124,6 +139,15 @@ public class SeatHoldService {
         for (SeatHold sh : holds) {
             String key = redisKey(sh.getTripInstanceId(), sh.getSeatCode());
             redis.delete(key);
+
+            // publish RELEASED event
+            SeatEvent ev = new SeatEvent();
+            ev.setInstanceId(sh.getTripInstanceId());
+            ev.setSeatCode(sh.getSeatCode());
+            ev.setEventType(SeatEvent.Type.RELEASED);
+            ev.setHoldToken(sh.getHoldToken());
+            ev.setUserId(sh.getUserId());
+            messagingTemplate.convertAndSend(String.format("/topic/trips/%s/seats", sh.getTripInstanceId().toString()), ev);
         }
         seatHoldRepository.deleteByHoldToken(holdToken);
     }
@@ -140,6 +164,16 @@ public class SeatHoldService {
             if (ok == null || !ok) throw new IllegalStateException("failed to extend hold in redis");
             sh.setExpiresAt(newExpiry);
             seatHoldRepository.save(sh);
+
+            // publish HELD event update with new expiry
+            SeatEvent ev = new SeatEvent();
+            ev.setInstanceId(sh.getTripInstanceId());
+            ev.setSeatCode(sh.getSeatCode());
+            ev.setEventType(SeatEvent.Type.HELD);
+            ev.setHoldToken(sh.getHoldToken());
+            ev.setExpiresAt(newExpiry);
+            ev.setUserId(sh.getUserId());
+            messagingTemplate.convertAndSend(String.format("/topic/trips/%s/seats", sh.getTripInstanceId().toString()), ev);
         }
         HoldResult r = new HoldResult();
         r.holdToken = holdToken;
@@ -175,6 +209,16 @@ public class SeatHoldService {
             ts.setBookingId(booking.getId());
             tripSeatRepository.save(ts);
             if (ts.getPrice() != null) total = total.add(ts.getPrice());
+
+            // publish BOOKED event
+            SeatEvent ev = new SeatEvent();
+            ev.setInstanceId(sh.getTripInstanceId());
+            ev.setSeatCode(sh.getSeatCode());
+            ev.setEventType(SeatEvent.Type.BOOKED);
+            ev.setHoldToken(sh.getHoldToken());
+            ev.setUserId(sh.getUserId());
+            ev.setBookingId(booking.getId());
+            messagingTemplate.convertAndSend(String.format("/topic/trips/%s/seats", sh.getTripInstanceId().toString()), ev);
         }
 
         booking.setAmount(total);
