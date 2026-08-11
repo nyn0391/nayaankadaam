@@ -1,7 +1,11 @@
 package com.busgo.auth.dto;
 
+import jakarta.validation.constraints.NotBlank;
+
 public class AuthRequest {
+    @NotBlank
     private String username; // email or mobile
+    @NotBlank
     private String password;
 
     public String getUsername() { return username; }

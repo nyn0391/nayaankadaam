@@ -1,9 +1,20 @@
 package com.busgo.auth.dto;
 
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 public class RegisterRequest {
     private String fullName;
+
+    @NotBlank
+    @Email
     private String email;
+
     private String mobile;
+
+    @NotBlank
+    @Size(min = 8, message = "Password must be at least 8 characters")
     private String password;
 
     public String getFullName() { return fullName; }
