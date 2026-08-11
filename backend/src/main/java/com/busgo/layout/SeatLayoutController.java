@@ -4,6 +4,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import com.busgo.security.SecurityUtils;
 
@@ -29,9 +30,9 @@ public class SeatLayoutController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> create(@RequestBody SeatLayout layout) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
         if (layout.getId() == null) layout.setId(UUID.randomUUID());
         var uid = securityUtils.getUserId(auth);
         if (uid != null) layout.setCreatedBy(uid);
@@ -39,9 +40,8 @@ public class SeatLayoutController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody SeatLayout in) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
         return repo.findById(id).map(existing -> {
             existing.setName(in.getName());
             existing.setDescription(in.getDescription());
@@ -54,5 +54,6 @@ public class SeatLayoutController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable UUID id) { Authentication auth = SecurityContextHolder.getContext().getAuthentication(); if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden")); repo.deleteById(id); return ResponseEntity.ok().build(); }
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> delete(@PathVariable UUID id) { repo.deleteById(id); return ResponseEntity.ok().build(); }
 }

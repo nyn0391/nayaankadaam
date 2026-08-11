@@ -4,6 +4,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import com.busgo.security.SecurityUtils;
 
@@ -27,9 +28,9 @@ public class BusController {
     public ResponseEntity<?> get(@PathVariable UUID id) { return repo.findById(id).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build()); }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> create(@RequestBody Bus bus) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
         if (bus.getId() == null) bus.setId(UUID.randomUUID());
         var uid = securityUtils.getUserId(auth);
         if (uid != null) bus.setCreatedBy(uid);
@@ -37,9 +38,8 @@ public class BusController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody Bus in) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
         return repo.findById(id).map(existing -> {
             existing.setModel(in.getModel());
             existing.setRegistrationNumber(in.getRegistrationNumber());
@@ -51,5 +51,6 @@ public class BusController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable UUID id) { Authentication auth = SecurityContextHolder.getContext().getAuthentication(); if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden")); repo.deleteById(id); return ResponseEntity.ok().build(); }
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> delete(@PathVariable UUID id) { repo.deleteById(id); return ResponseEntity.ok().build(); }
 }

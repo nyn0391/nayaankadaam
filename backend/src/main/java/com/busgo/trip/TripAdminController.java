@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 import java.util.Map;
@@ -41,9 +42,9 @@ public class TripAdminController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> createTrip(@RequestBody Map<String, Object> body) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
         // expected body: id(optional), routeId, busId, scheduledAt, basePrice
         try {
             UUID routeId = UUID.fromString((String) body.get("routeId"));
