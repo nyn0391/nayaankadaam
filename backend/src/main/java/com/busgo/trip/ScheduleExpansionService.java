@@ -57,11 +57,30 @@ public class ScheduleExpansionService {
         Set<DayOfWeek> weekdays = new HashSet<>();
         if (rule.getWeekdays() != null && !rule.getWeekdays().isEmpty()) {
             try {
+                // rule.getWeekdays() is stored as JSON array string of full day names
                 var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 String json = rule.getWeekdays();
-                var arr = mapper.readValue(json, String[].class);
+                String[] arr = null;
+                try {
+                    arr = mapper.readValue(json, String[].class);
+                } catch (Exception ex) {
+                    // fallback: try comma-separated
+                    arr = json.split(",");
+                }
                 for (String w : arr) {
-                    weekdays.add(DayOfWeek.valueOf(w));
+                    if (w == null) continue;
+                    String token = w.trim().toUpperCase(Locale.ROOT);
+                    try {
+                        weekdays.add(DayOfWeek.valueOf(token));
+                    } catch (Exception ex) {
+                        // attempt to map short names or numbers via WeekdayUtils
+                        try {
+                            String mapped = WeekdayUtils.normalizeWeekdays(token);
+                            // mapped is JSON array string; parse first element
+                            String[] mappedArr = mapper.readValue(mapped, String[].class);
+                            for (String m : mappedArr) weekdays.add(DayOfWeek.valueOf(m));
+                        } catch (Exception ignored) {}
+                    }
                 }
             } catch (Exception ignored) {}
         }

@@ -5,6 +5,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,9 +32,32 @@ public class ScheduleAdminController {
             r.setRuleType((String) body.get("ruleType"));
             r.setStartDate(java.sql.Date.valueOf((String) body.get("startDate")));
             if (body.containsKey("endDate") && body.get("endDate") != null) r.setEndDate(java.sql.Date.valueOf((String) body.get("endDate")));
-            if (body.containsKey("weekdays")) r.setWeekdays(body.get("weekdays").toString());
-            r.setTimeOfDay((String) body.get("timeOfDay"));
-            r.setTimezone((String) body.getOrDefault("timezone", "UTC"));
+
+            // validate and normalize timeOfDay (HH:mm)
+            String timeOfDay = (String) body.get("timeOfDay");
+            if (timeOfDay == null || !timeOfDay.matches("^([01]\\d|2[0-3]):[0-5]\\d$")) {
+                return ResponseEntity.status(400).body(Map.of("error", "timeOfDay must be in HH:mm 24-hour format"));
+            }
+            r.setTimeOfDay(timeOfDay);
+
+            // validate timezone
+            String timezone = (String) body.getOrDefault("timezone", "UTC");
+            try {
+                ZoneId.of(timezone);
+            } catch (Exception ex) {
+                return ResponseEntity.status(400).body(Map.of("error", "invalid timezone: " + timezone));
+            }
+            r.setTimezone(timezone);
+
+            if (body.containsKey("weekdays") && body.get("weekdays") != null) {
+                try {
+                    String normalized = WeekdayUtils.normalizeWeekdays(body.get("weekdays"));
+                    r.setWeekdays(normalized);
+                } catch (IllegalArgumentException iae) {
+                    return ResponseEntity.status(400).body(Map.of("error", iae.getMessage()));
+                }
+            }
+
             scheduleRuleRepository.save(r);
             return ResponseEntity.ok(r);
         } catch (Exception ex) {
