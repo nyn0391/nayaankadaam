@@ -9,6 +9,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import AdminDashboard from './pages/AdminDashboard'
 import OperatorDashboard from './pages/OperatorDashboard'
 import AdminUsers from './pages/AdminUsers'
+import SeatMapPage from './pages/SeatMapPage'
 
 export default function App() {
   return (
@@ -37,6 +38,8 @@ export default function App() {
               <OperatorDashboard />
             </ProtectedRoute>
           } />
+
+          <Route path="/trips/:tripId/seats" element={<SeatMapPage />} />
 
         </Routes>
       </Container>
