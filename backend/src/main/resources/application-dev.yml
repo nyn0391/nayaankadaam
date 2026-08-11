@@ -1,0 +1,18 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:busgo_dev}
+    username: ${POSTGRES_USER:busgo}
+    password: ${POSTGRES_PASSWORD:busgo}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+
+flyway:
+  enabled: true
+  locations: classpath:db/migration,filesystem:database/migrations
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:replace_me}
+    expiration_ms: ${JWT_EXPIRATION_MS:3600000}

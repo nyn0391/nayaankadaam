@@ -1,0 +1,20 @@
+# Node
+node_modules
+/dist
+.env.local
+.env
+
+# Java
+/target/
+*.log
+!.mvn/wrapper/maven-wrapper.jar
+
+# IntelliJ
+.idea/
+*.iml
+
+# VSCode
+.vscode/
+
+# Mac
+.DS_Store
