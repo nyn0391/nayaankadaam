@@ -19,6 +19,7 @@ public class Route {
 
     private Double distanceKm;
     private Integer durationMinutes;
+    private UUID createdBy;
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
     public Route() {}
@@ -37,6 +38,8 @@ public class Route {
     public void setDistanceKm(Double distanceKm) { this.distanceKm = distanceKm; }
     public Integer getDurationMinutes() { return durationMinutes; }
     public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes; }
+    public UUID getCreatedBy() { return createdBy; }
+    public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
 }

@@ -2,8 +2,13 @@ package com.busgo.layout;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import com.busgo.security.SecurityUtils;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -11,8 +16,9 @@ import java.util.UUID;
 public class SeatLayoutController {
 
     private final SeatLayoutRepository repo;
+    private final SecurityUtils securityUtils;
 
-    public SeatLayoutController(SeatLayoutRepository repo) { this.repo = repo; }
+    public SeatLayoutController(SeatLayoutRepository repo, SecurityUtils securityUtils) { this.repo = repo; this.securityUtils = securityUtils; }
 
     @GetMapping
     public List<SeatLayout> list() { return repo.findAll(); }
@@ -23,13 +29,19 @@ public class SeatLayoutController {
     }
 
     @PostMapping
-    public SeatLayout create(@RequestBody SeatLayout layout) {
+    public ResponseEntity<?> create(@RequestBody SeatLayout layout) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
         if (layout.getId() == null) layout.setId(UUID.randomUUID());
-        return repo.save(layout);
+        var uid = securityUtils.getUserId(auth);
+        if (uid != null) layout.setCreatedBy(uid);
+        return ResponseEntity.ok(repo.save(layout));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody SeatLayout in) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
         return repo.findById(id).map(existing -> {
             existing.setName(in.getName());
             existing.setDescription(in.getDescription());
@@ -42,8 +54,5 @@ public class SeatLayoutController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable UUID id) {
-        repo.deleteById(id);
-        return ResponseEntity.ok().build();
-    }
+    public ResponseEntity<?> delete(@PathVariable UUID id) { Authentication auth = SecurityContextHolder.getContext().getAuthentication(); if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden")); repo.deleteById(id); return ResponseEntity.ok().build(); }
 }

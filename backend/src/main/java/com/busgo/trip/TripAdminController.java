@@ -5,8 +5,11 @@ import com.busgo.booking.repo.TripSeatRepository;
 import com.busgo.bus.BusRepository;
 import com.busgo.layout.SeatLayoutRepository;
 import com.busgo.route.RouteRepository;
+import com.busgo.security.SecurityUtils;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 import java.util.Map;
@@ -21,21 +24,26 @@ public class TripAdminController {
     private final RouteRepository routeRepository;
     private final SeatLayoutRepository seatLayoutRepository;
     private final TripSeatRepository tripSeatRepository;
+    private final SecurityUtils securityUtils;
 
     public TripAdminController(TripRepository tripRepository,
                                BusRepository busRepository,
                                RouteRepository routeRepository,
                                SeatLayoutRepository seatLayoutRepository,
-                               TripSeatRepository tripSeatRepository) {
+                               TripSeatRepository tripSeatRepository,
+                               SecurityUtils securityUtils) {
         this.tripRepository = tripRepository;
         this.busRepository = busRepository;
         this.routeRepository = routeRepository;
         this.seatLayoutRepository = seatLayoutRepository;
         this.tripSeatRepository = tripSeatRepository;
+        this.securityUtils = securityUtils;
     }
 
     @PostMapping
     public ResponseEntity<?> createTrip(@RequestBody Map<String, Object> body) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
         // expected body: id(optional), routeId, busId, scheduledAt, basePrice
         try {
             UUID routeId = UUID.fromString((String) body.get("routeId"));
@@ -49,6 +57,8 @@ public class TripAdminController {
             trip.setRouteId(routeId);
             trip.setBusId(busId);
             trip.setBasePrice(body.getOrDefault("basePrice", 0.0) instanceof Number ? ((Number) body.getOrDefault("basePrice", 0.0)).doubleValue() : Double.parseDouble(body.getOrDefault("basePrice", "0").toString()));
+            var uid = securityUtils.getUserId(auth);
+            if (uid != null) trip.setCreatedBy(uid);
             tripRepository.save(trip);
 
             // generate trip seats from seat layout if present

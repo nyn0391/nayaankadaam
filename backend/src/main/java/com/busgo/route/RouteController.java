@@ -2,8 +2,13 @@ package com.busgo.route;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import com.busgo.security.SecurityUtils;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -11,8 +16,9 @@ import java.util.UUID;
 public class RouteController {
 
     private final RouteRepository repo;
+    private final SecurityUtils securityUtils;
 
-    public RouteController(RouteRepository repo) { this.repo = repo; }
+    public RouteController(RouteRepository repo, SecurityUtils securityUtils) { this.repo = repo; this.securityUtils = securityUtils; }
 
     @GetMapping
     public List<Route> list() { return repo.findAll(); }
@@ -21,10 +27,19 @@ public class RouteController {
     public ResponseEntity<?> get(@PathVariable UUID id) { return repo.findById(id).map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build()); }
 
     @PostMapping
-    public Route create(@RequestBody Route route) { if (route.getId() == null) route.setId(UUID.randomUUID()); return repo.save(route); }
+    public ResponseEntity<?> create(@RequestBody Route route) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
+        if (route.getId() == null) route.setId(UUID.randomUUID());
+        var uid = securityUtils.getUserId(auth);
+        if (uid != null) route.setCreatedBy(uid);
+        return ResponseEntity.ok(repo.save(route));
+    }
 
     @PutMapping("/{id}")
     public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody Route in) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden"));
         return repo.findById(id).map(existing -> {
             existing.setCode(in.getCode());
             existing.setOrigin(in.getOrigin());
@@ -38,5 +53,5 @@ public class RouteController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> delete(@PathVariable UUID id) { repo.deleteById(id); return ResponseEntity.ok().build(); }
+    public ResponseEntity<?> delete(@PathVariable UUID id) { Authentication auth = SecurityContextHolder.getContext().getAuthentication(); if (!securityUtils.isAdmin(auth)) return ResponseEntity.status(403).body(Map.of("success", false, "message", "forbidden")); repo.deleteById(id); return ResponseEntity.ok().build(); }
 }

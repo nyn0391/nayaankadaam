@@ -15,6 +15,7 @@ public class Bus {
     private String registrationNumber;
     private UUID seatLayoutId;
     private Integer totalSeats;
+    private UUID createdBy;
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
     public Bus() {}
@@ -31,6 +32,8 @@ public class Bus {
     public void setSeatLayoutId(UUID seatLayoutId) { this.seatLayoutId = seatLayoutId; }
     public Integer getTotalSeats() { return totalSeats; }
     public void setTotalSeats(Integer totalSeats) { this.totalSeats = totalSeats; }
+    public UUID getCreatedBy() { return createdBy; }
+    public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
 }
