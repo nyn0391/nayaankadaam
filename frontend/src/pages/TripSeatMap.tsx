@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Box, Button, Grid, Paper, Typography, CircularProgress } from '@mui/material'
 import * as holdsApi from '../services/holds'
+import useSeatSocket from '../hooks/useSeatSocket'
 
 export default function TripSeatMap() {
   const { instanceId } = useParams()
@@ -45,18 +46,46 @@ export default function TripSeatMap() {
     }, 1000)
   }
 
+  const handleSeatEvent = useCallback((ev: any) => {
+    if (!ev || !ev.seatCode) return
+    setSeats(prev => prev.map(s => {
+      if (s.seatCode !== ev.seatCode) return s
+      if (ev.eventType === 'HELD') {
+        // if this is our hold token, mark as heldByMe
+        const heldByMe = myHold && ev.holdToken && myHold.holdToken === ev.holdToken
+        if (heldByMe) {
+          // update myHold expiry if necessary
+          setMyHold(mh => mh ? { ...mh, expiresAt: ev.expiresAt } : mh)
+        }
+        return { ...s, held: true, heldByMe: heldByMe, expiresAt: ev.expiresAt }
+      }
+      if (ev.eventType === 'RELEASED') {
+        // clear hold
+        return { ...s, held: false, heldByMe: false, expiresAt: null }
+      }
+      if (ev.eventType === 'BOOKED') {
+        // mark booked and remove hold-related flags
+        // if this seat was in our hold, clear our hold
+        if (myHold && myHold.seats.includes(ev.seatCode)) setMyHold(null)
+        return { ...s, held: false, heldByMe: false, expiresAt: null, isBooked: true, bookingId: ev.bookingId }
+      }
+      return s
+    }))
+  }, [myHold])
+
+  // connect to websocket for live seat events (no token passed here; add token if your app stores JWT)
+  useSeatSocket(instanceId, null, handleSeatEvent)
+
   async function loadSeats() {
     if (!instanceId) return
     setLoading(true)
     setError('')
     try {
--      const data = await holdsApi.getSeats(instanceId)
--      setSeats(data)
-+      const data = await holdsApi.getSeats(instanceId)
-+      setLayout(data.layout)
-+      setSeats(data.seats)
-+      // clear selection if seats changed
-+      setSelectedSeats([])
+      const data = await holdsApi.getSeats(instanceId)
+      setLayout(data.layout)
+      setSeats(data.seats)
+      // clear selection if seats changed
+      setSelectedSeats([])
     } catch (e:any) {
       setError(e?.response?.data?.error || 'Failed to load seats')
     } finally { setLoading(false) }
