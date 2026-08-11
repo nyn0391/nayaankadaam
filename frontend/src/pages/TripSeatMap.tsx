@@ -7,10 +7,12 @@ export default function TripSeatMap() {
   const { instanceId } = useParams()
   const navigate = useNavigate()
   const [seats, setSeats] = useState<any[]>([])
+  const [layout, setLayout] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [myHold, setMyHold] = useState<{ holdToken: string, expiresAt: string, seats: string[] } | null>(null)
   const [countdown, setCountdown] = useState<number | null>(null)
+  const [selectedSeats, setSelectedSeats] = useState<string[]>([])
   const timerRef = useRef<any>(null)
 
   useEffect(() => { loadSeats(); return cleanupTimer }, [instanceId])
@@ -48,11 +50,27 @@ export default function TripSeatMap() {
     setLoading(true)
     setError('')
     try {
-      const data = await holdsApi.getSeats(instanceId)
-      setSeats(data)
+-      const data = await holdsApi.getSeats(instanceId)
+-      setSeats(data)
++      const data = await holdsApi.getSeats(instanceId)
++      setLayout(data.layout)
++      setSeats(data.seats)
++      // clear selection if seats changed
++      setSelectedSeats([])
     } catch (e:any) {
       setError(e?.response?.data?.error || 'Failed to load seats')
     } finally { setLoading(false) }
+  }
+
+  function isSelectable(s:any) {
+    return !s.isBooked && !(s.held && !s.heldByMe)
+  }
+
+  function toggleSelect(seatCode: string) {
+    setSelectedSeats(prev => {
+      if (prev.includes(seatCode)) return prev.filter(x => x !== seatCode)
+      return [...prev, seatCode]
+    })
   }
 
   async function handleSeatClick(seatCode: string) {
@@ -60,27 +78,26 @@ export default function TripSeatMap() {
     setError('')
     const seat = seats.find(s => s.seatCode === seatCode)
     if (!seat) return
-    if (seat.isBooked) return setError('Seat already booked')
-    // if we already hold this seat, release it
-    if (myHold && myHold.seats.includes(seatCode)) {
-      try {
-        await holdsApi.releaseHold(instanceId, myHold.holdToken)
-        setMyHold(null)
-        loadSeats()
-      } catch (e:any) { setError(e?.response?.data?.error || 'Failed to release hold') }
-      return
-    }
+    if (!isSelectable(seat)) return setError('Seat not selectable')
+    // toggle selection locally
+    toggleSelect(seatCode)
+  }
 
-    // create a hold for this single seat
+  async function handleCreateHold() {
+    if (!instanceId) return
+    if (selectedSeats.length === 0) return setError('Select seats first')
+    setLoading(true)
+    setError('')
     try {
-      const res = await holdsApi.createHold(instanceId, [seatCode])
+      const res = await holdsApi.createHold(instanceId, selectedSeats)
       setMyHold({ holdToken: res.holdToken, expiresAt: res.expiresAt, seats: res.seats })
-      // optimistic update: mark seat as held by you locally
-      setSeats(prev => prev.map(s => s.seatCode === seatCode ? { ...s, isHeldByMe: true } : s))
+      // mark selected seats as held by me
+      setSeats(prev => prev.map(s => selectedSeats.includes(s.seatCode) ? { ...s, held: true, heldByMe: true } : s))
+      setSelectedSeats([])
     } catch (e:any) {
       setError(e?.response?.data?.error || 'Failed to create hold')
       await loadSeats()
-    }
+    } finally { setLoading(false) }
   }
 
   async function handleConfirm() {
@@ -88,13 +105,10 @@ export default function TripSeatMap() {
     setLoading(true)
     setError('')
     try {
-      // in a real app payment flow would go here; we call confirm with empty payment info
       const res = await holdsApi.confirmHold(myHold.holdToken, {})
-      // on success, navigate to booking details page or show confirmation
       navigate(`/bookings/${res.bookingId}`)
     } catch (e:any) {
       setError(e?.response?.data?.error || 'Failed to confirm booking')
-      // reload seats
       loadSeats()
     } finally { setLoading(false) }
   }
@@ -111,6 +125,63 @@ export default function TripSeatMap() {
     finally { setLoading(false) }
   }
 
+  // compute grid layout
+  function renderGrid() {
+    // if layout contains seats with row/col use that
+    let positioned = false
+    let maxRow = 0
+    let maxCol = 0
+    const mapping:any = {}
+    if (layout && layout.seats && Array.isArray(layout.seats)) {
+      layout.seats.forEach((s:any) => {
+        if (s.row != null && s.col != null) {
+          positioned = true
+          maxRow = Math.max(maxRow, s.row)
+          maxCol = Math.max(maxCol, s.col)
+          mapping[s.seatCode] = { row: s.row, col: s.col }
+        }
+      })
+    }
+
+    if (positioned) {
+      const gridItems:any[] = []
+      for (let r = 1; r <= maxRow; r++) {
+        for (let c = 1; c <= maxCol; c++) {
+          const seatAt = Object.keys(mapping).find(k => mapping[k].row === r && mapping[k].col === c)
+          if (seatAt) {
+            const s = seats.find(x => x.seatCode === seatAt)
+            gridItems.push(renderSeatButton(s))
+          } else {
+            gridItems.push(<div key={`${r}-${c}`} style={{ width: 72, height: 48 }} />)
+          }
+        }
+      }
+      return (<div style={{ display: 'grid', gridTemplateColumns: `repeat(${maxCol}, 80px)`, gap: 8 }}>{gridItems}</div>)
+    }
+
+    // fallback: simple grid with 6 columns
+    const cols = 6
+    return (<div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 80px)`, gap: 8 }}>{seats.map(s => renderSeatButton(s))}</div>)
+  }
+
+  function renderSeatButton(s:any) {
+    const selected = selectedSeats.includes(s.seatCode)
+    return (
+      <Button key={s.seatCode}
+        variant={s.isBooked ? 'contained' : (selected ? 'outlined' : 'text')}
+        color={s.isBooked ? 'error' : (selected ? 'primary' : 'inherit')}
+        onClick={() => handleSeatClick(s.seatCode)}
+        disabled={s.isBooked || (s.held && !s.heldByMe)}
+        sx={{ minWidth: 72, minHeight: 48 }}
+      >
+        <div>{s.seatCode}</div>
+        {s.isBooked && <div style={{ fontSize: 10 }}>BOOKED</div>}
+        {!s.isBooked && s.held && !s.heldByMe && <div style={{ fontSize: 10 }}>HELD</div>}
+        {!s.isBooked && s.held && s.heldByMe && <div style={{ fontSize: 10 }}>HELD (you)</div>}
+      </Button>
+    )
+  }
+
   return (
     <Box>
       <Typography variant="h6">Seat map</Typography>
@@ -118,23 +189,7 @@ export default function TripSeatMap() {
       {error && <Typography color="error">{error}</Typography>}
 
       <Paper sx={{ p: 2, mt: 2 }}>
-        <Grid container spacing={1}>
-          {seats.map((s:any) => (
-            <Grid item key={s.seatCode}>
-              <Button
-                variant={s.isBooked ? 'contained' : (myHold && myHold.seats.includes(s.seatCode) ? 'outlined' : 'text')}
-                color={s.isBooked ? 'error' : (myHold && myHold.seats.includes(s.seatCode) ? 'primary' : 'inherit')}
-                onClick={() => handleSeatClick(s.seatCode)}
-                disabled={s.isBooked}
-                sx={{ minWidth: 72, minHeight: 48 }}
-              >
-                <div>{s.seatCode}</div>
-                {s.isBooked && <div style={{ fontSize: 10 }}>BOOKED</div>}
-                {!s.isBooked && myHold && myHold.seats.includes(s.seatCode) && <div style={{ fontSize: 10 }}>HELD</div>}
-              </Button>
-            </Grid>
-          ))}
-        </Grid>
+        {renderGrid()}
 
         <Box sx={{ mt: 2 }}>
           {myHold ? (
@@ -146,7 +201,10 @@ export default function TripSeatMap() {
               <Button variant="outlined" onClick={handleRelease}>Release hold</Button>
             </>
           ) : (
-            <Typography>Select a seat to hold it for checkout.</Typography>
+            <>
+              <Typography>Select seats to hold them for checkout.</Typography>
+              <Button variant="contained" onClick={handleCreateHold} disabled={selectedSeats.length===0} sx={{ mt:1 }}>Hold selected seats ({selectedSeats.length})</Button>
+            </>
           )}
         </Box>
       </Paper>
