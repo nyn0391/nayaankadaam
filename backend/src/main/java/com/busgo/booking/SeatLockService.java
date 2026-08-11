@@ -31,17 +31,12 @@ public class SeatLockService {
 
     public record HoldResult(String holdToken, List<String> conflicts) {}
 
-    /**
-     * Attempt to lock seats atomically using Lua script. Returns HoldResult with a holdToken when successful.
-     * If conflicts exist, holdToken will be null and conflicts contain the conflicting seat keys.
-     */
     public HoldResult holdSeats(String tripId, List<String> seatCodes, String userId) {
         if (seatCodes == null || seatCodes.isEmpty()) return new HoldResult(null, List.of());
         List<String> keys = new ArrayList<>();
         for (String s : seatCodes) keys.add(seatKey(tripId, s));
         String holdToken = UUID.randomUUID().toString();
         String mapKey = "hold:" + holdToken;
-        // args: holdToken, userId, ttlSeconds, mapKey
         Long ttlSeconds = lockTtl.getSeconds();
         try {
             Object res = redis.execute(lockSeatsScript, keys, holdToken, userId, ttlSeconds.toString(), mapKey);
@@ -56,10 +51,15 @@ public class SeatLockService {
                 }
             }
         } catch (Exception ex) {
-            // fallback: indicate conflict
             return new HoldResult(null, List.of("error"));
         }
         return new HoldResult(null, List.of("unknown"));
+    }
+
+    public List<String> getSeatsForHold(String holdToken) {
+        String mapKey = "hold:" + holdToken;
+        List<String> seats = redis.opsForList().range(mapKey, 0, -1);
+        return seats;
     }
 
     public boolean confirmHold(String holdToken) {
